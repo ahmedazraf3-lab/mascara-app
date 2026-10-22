@@ -34,9 +34,14 @@ button[aria-pressed="true"],.tabs button[aria-selected="true"],#go{background:va
 .tabs button{flex:1}
 .panel{background:var(--sf);border:1px solid var(--ln);border-radius:14px;padding:4px 14px 14px;margin-top:10px}
 .lb{display:block;margin:14px 0 6px;color:var(--mu);font-size:13px}
-.row{display:flex;flex-wrap:wrap;gap:8px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .sw{width:44px;height:44px;border-radius:50%;padding:0;border-width:2px}
 .sw[aria-pressed="true"]{border-color:var(--ac);box-shadow:0 0 0 3px var(--ac)}
+.th{width:56px;height:56px;border-radius:50%;padding:0;border-width:2px;overflow:hidden;background:var(--bg)}
+.th img{width:100%;height:100%;object-fit:cover;display:block}
+.th[aria-pressed="true"]{border-color:var(--ac);box-shadow:0 0 0 3px var(--ac)}
+.plus{width:56px;height:56px;border-radius:50%;padding:0;font-size:28px;line-height:1;border-style:dashed}
+#delImg{margin-top:10px}
 .hint{color:var(--mu);font-size:12.5px;margin:10px 0 0}
 input[type=range]{width:100%;accent-color:var(--ac)}
 textarea{width:100%;min-height:80px;font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--ln);border-radius:10px;padding:8px}
@@ -72,9 +77,14 @@ textarea{width:100%;min-height:80px;font:inherit;color:var(--tx);background:var(
 <section class="panel" id="p0">
 <span class="lb">Modo</span><div class="row" id="modes"></div>
 <div id="gAv">
-<span class="lb">Avatar</span><div class="row" id="avs"></div>
+<span class="lb">Mis avatares (pulsa + para subir uno de tu galería)</span>
+<div class="row" id="imgs"></div>
+<input type="file" id="up" accept="image/*" hidden>
+<button id="delImg" hidden>Quitar este avatar</button>
+<span class="lb">Recorte de la imagen</span><div class="row" id="shapes"></div>
+<span class="lb">Avatares dibujados</span><div class="row" id="avs"></div>
 <span class="lb">Fondo del avatar</span><div class="row" id="bgs"></div>
-<p class="hint">La boca sigue tu voz y la cabeza sigue la posición de tu cara. Funciona mejor con buena luz y la cara de frente.</p>
+<p class="hint">El avatar se mueve con tu cara y rebota al hablar. Funciona mejor con buena luz y la cara de frente. Los PNG con fondo transparente quedan mejor con «Sin recorte».</p>
 </div>
 <div id="gMask" hidden>
 <span class="lb">Máscara</span><div class="row" id="masks"></div>
@@ -112,7 +122,7 @@ const W=450,H=800,cv=$('cv'),cx=cv.getContext('2d');cv.width=W;cv.height=H;
 const sm=document.createElement('canvas');sm.width=36;sm.height=64;
 const sx=sm.getContext('2d',{willReadFrequently:true});
 const tn=document.createElement('canvas'),tc=tn.getContext('2d');
-const st={mode:'avatar',av:0,bg:0,mask:'🎭',pitch:1,robot:false,subs:false};
+const st={mode:'avatar',img:0,shape:'c',av:0,bg:0,mask:'🎭',pitch:1,robot:false,subs:false};
 const AV=[{c:'#ffcf5c',b:'#6d3df5'},{c:'#a9bccf',b:'#47566b',sq:1},{c:'#f29b5c',b:'#3b8f7a',cat:1}];
 const BG=[['#2b2250','#0f0c1f'],['#ffe3b8','#ff9f80'],['#0e3b43','#12233a'],['#dfe6f3','#9fb3d1']];
 const vid=document.createElement('video');vid.muted=true;vid.playsInline=true;
@@ -132,8 +142,68 @@ function chips(id,items,key,after){
   });
 }
 chips('modes',[['Avatar','avatar'],['Máscara','mask'],['Pixelado','pixel'],['Desenfoque','blur']],'mode',v=>{$('gAv').hidden=v!=='avatar';$('gMask').hidden=v!=='mask'});
-chips('avs',[['Bola',0],['Robot',1],['Gato',2]],'av');
+chips('shapes',[['Círculo','c'],['Redondeado','r'],['Sin recorte','n']],'shape');
 chips('masks',['🎭','🤖','🐱','👽','🦊'].map(e=>[e,e]),'mask');
+
+/* avatares dibujados */
+['Bola','Robot','Gato'].forEach((l,i)=>{
+  const b=document.createElement('button');b.textContent=l;
+  b.onclick=()=>{st.av=i;st.img=-1;sync()};
+  $('avs').appendChild(b);
+});
+
+/* avatares de imagen: el primero es fijo (avatar.jpg), el resto los subes tú */
+const IMS=[];
+function addImg(src,custom){
+  const el=new Image(),m={src,el,ok:false,custom};
+  el.onload=()=>{m.ok=true};
+  el.onerror=()=>{if(!custom&&st.img===0){st.img=-1;sync()}};
+  el.src=src;IMS.push(m);return m;
+}
+function saved(){try{return JSON.parse(localStorage.getItem('mascara-avs')||'[]')}catch(_){return[]}}
+function persist(){try{localStorage.setItem('mascara-avs',JSON.stringify(IMS.filter(m=>m.custom).map(m=>m.src)));return true}catch(_){return false}}
+function sync(){
+  [...$('avs').children].forEach((c,i)=>c.setAttribute('aria-pressed',String(st.img<0&&st.av===i)));
+  [...$('imgs').querySelectorAll('.th')].forEach((c,i)=>c.setAttribute('aria-pressed',String(st.img===i)));
+  $('delImg').hidden=!(st.img>0);
+}
+function renderImgs(){
+  const el=$('imgs');el.innerHTML='';
+  IMS.forEach((m,i)=>{
+    const b=document.createElement('button');b.className='th';b.setAttribute('aria-label','Avatar '+(i+1));
+    const im=document.createElement('img');im.src=m.src;im.alt='';b.appendChild(im);
+    b.onclick=()=>{st.img=i;sync()};el.appendChild(b);
+  });
+  const p=document.createElement('button');p.className='plus';p.textContent='+';
+  p.setAttribute('aria-label','Subir avatar desde la galería');p.onclick=()=>$('up').click();el.appendChild(p);
+  sync();
+}
+addImg('avatar.jpg',false);
+saved().forEach(s=>addImg(s,true));
+renderImgs();
+
+$('up').onchange=e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  if(IMS.filter(m=>m.custom).length>=8){toast('Máximo 8 avatares subidos. Quita alguno primero');return}
+  const u=URL.createObjectURL(f),im=new Image();
+  im.onload=()=>{
+    const k=Math.min(1,768/Math.max(im.width,im.height)),c=document.createElement('canvas');
+    c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
+    c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+    const d=c.toDataURL(f.type==='image/png'?'image/png':'image/jpeg',.88);
+    URL.revokeObjectURL(u);addImg(d,true);st.img=IMS.length-1;
+    if(f.type==='image/png')st.shape='n';
+    if(!persist())toast('Avatar listo, pero no hay espacio para guardarlo');
+    renderImgs();
+    [...$('shapes').children].forEach((c,i)=>c.setAttribute('aria-pressed',String(['c','r','n'][i]===st.shape)));
+  };
+  im.onerror=()=>{URL.revokeObjectURL(u);toast('No se pudo abrir esa imagen')};
+  im.src=u;
+};
+$('delImg').onclick=()=>{
+  if(st.img>0){IMS.splice(st.img,1);st.img=0;persist();renderImgs()}
+};
+
 BG.forEach((g,i)=>{
   const b=document.createElement('button');b.className='sw';b.setAttribute('aria-label','Fondo '+(i+1));
   b.style.background=`linear-gradient(${g[0]},${g[1]})`;b.setAttribute('aria-pressed',String(i===0));
@@ -190,10 +260,30 @@ function trackFace(){
 }
 
 /* ---------- dibujo ---------- */
-function rr(a,b,c,d,e){cx.beginPath();cx.roundRect?cx.roundRect(a,b,c,d,e):cx.rect(a,b,c,d);cx.fill()}
-function drawAvatar(t){
+function drawBg(){
   const g=cx.createLinearGradient(0,0,0,H);g.addColorStop(0,BG[st.bg][0]);g.addColorStop(1,BG[st.bg][1]);
   cx.fillStyle=g;cx.fillRect(0,0,W,H);
+}
+function rr(a,b,c,d,e){cx.beginPath();cx.roundRect?cx.roundRect(a,b,c,d,e):cx.rect(a,b,c,d);cx.fill()}
+function drawImg(){
+  drawBg();
+  const m=IMS[st.img],im=m.el,iw=im.naturalWidth,ih=im.naturalHeight;
+  const S=Math.max(260,Math.min(440,face.r*2.7)),sc=1+lvl*.05;
+  cx.save();cx.translate(face.x,face.y-lvl*8);cx.rotate((face.x-W/2)/W*.5);cx.scale(sc,sc);
+  if(st.shape==='n'){
+    const k=S/Math.max(iw,ih);cx.drawImage(im,-iw*k/2,-ih*k/2,iw*k,ih*k);
+  }else{
+    cx.beginPath();
+    if(st.shape==='c')cx.arc(0,0,S/2,0,7);
+    else if(cx.roundRect)cx.roundRect(-S/2,-S/2,S,S,S*.18);else cx.rect(-S/2,-S/2,S,S);
+    cx.save();cx.clip();
+    const q=Math.min(iw,ih);cx.drawImage(im,(iw-q)/2,(ih-q)/2,q,q,-S/2,-S/2,S,S);
+    cx.restore();cx.lineWidth=6;cx.strokeStyle='#fff';cx.stroke();
+  }
+  cx.restore();
+}
+function drawAvatar(t){
+  drawBg();
   const A=AV[st.av],x=face.x,y=face.y,r=Math.min(face.r,190);
   cx.fillStyle=A.b;cx.beginPath();cx.ellipse(x,y+r*2.1,r*1.6,r*1.3,0,0,7);cx.fill();
   cx.save();cx.translate(x,y);cx.rotate((x-W/2)/W*.5);
@@ -234,7 +324,9 @@ function frame(t){
   lvl+=(Math.min(1,Math.sqrt(s/td.length)*6)-lvl)*.4;
   if(t>nextBlink){blink=t+140;nextBlink=t+2200+Math.random()*3000}
   trackFace();
-  if(st.mode==='avatar')drawAvatar(t);
+  if(st.mode==='avatar'){
+    if(st.img>=0&&IMS[st.img]&&IMS[st.img].ok)drawImg();else drawAvatar(t);
+  }
   else if(st.mode==='mask'){
     low(20,36,true);cx.font=`${face.r*2.6}px serif`;cx.textAlign='center';cx.textBaseline='middle';
     cx.fillText(st.mask,face.x,face.y);cx.textAlign='left';cx.textBaseline='alphabetic';
