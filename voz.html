@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#6d3df5">
+<title>Editor de voz</title>
+<style>
+:root{--bg:#f3f1f7;--sf:#fff;--tx:#1b1630;--mu:#6b6585;--ac:#6d3df5;--on:#fff;--ln:#ddd8ea;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#13111c;--sf:#1e1b2c;--tx:#ece9f7;--mu:#9a94b4;--ac:#a58bff;--on:#1a1030;--ln:#322e47;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#13111c;--sf:#1e1b2c;--tx:#ece9f7;--mu:#9a94b4;--ac:#a58bff;--on:#1a1030;--ln:#322e47;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:560px;margin:0 auto;padding:14px 14px 40px}
+h1{font:italic 700 26px/1 Georgia,"Times New Roman",serif;margin:8px 0 4px}
+.back{color:var(--ac);font-size:14px;text-decoration:none}
+.sub,.hint{color:var(--mu);font-size:13px;margin:6px 0 0}
+.card{background:var(--sf);border:1px solid var(--ln);border-radius:14px;padding:14px;margin-top:12px}
+button,.btn{font:inherit;color:var(--tx);background:var(--sf);border:1px solid var(--ln);border-radius:12px;padding:10px 14px;cursor:pointer}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+.pri{background:var(--ac);color:var(--on);border-color:var(--ac);font-weight:600;display:inline-block}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.lb{display:block;margin:0 0 8px;color:var(--mu);font-size:13px}
+details{border-top:1px solid var(--ln);padding:10px 0}
+details:first-of-type{margin-top:14px}
+summary{font-weight:600;cursor:pointer}
+.sl{margin-top:12px}
+.sl label{display:flex;justify-content:space-between;gap:10px;font-size:14px}
+.sl output{color:var(--ac);font-weight:600;white-space:nowrap}
+input[type=range]{width:100%;accent-color:var(--ac);margin:6px 0 0}
+.tg{display:flex;align-items:center;gap:10px;margin-top:12px}
+.tg input{width:22px;height:22px;accent-color:var(--ac)}
+select{font:inherit;color:var(--tx);background:var(--sf);border:1px solid var(--ln);border-radius:10px;padding:9px;max-width:100%}
+audio{width:100%;margin-top:12px}
+progress{width:100%;margin-top:12px;accent-color:var(--ac)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.grid button{font-weight:600}
+</style>
+</head>
+<body>
+<main>
+<a class="back" href="index.html">← Volver a Máscara</a>
+<h1>Editor de voz</h1>
+<p class="sub">Sube un audio o un vídeo, cambia el tono y guarda el resultado sin perder calidad. Todo se procesa en tu dispositivo y no se sube a ningún servidor.</p>
+
+<section class="card">
+<label><input type="file" id="file" accept="audio/*,video/*" hidden><span class="btn pri">Subir audio o vídeo</span></label>
+<p id="info" class="hint">Ningún archivo seleccionado.</p>
+<audio id="orig" controls hidden></audio>
+</section>
+
+<section class="card" id="ctl" hidden>
+<span class="lb">Ajustes rápidos</span>
+<div class="row" id="presets"></div>
+<div id="groups"></div>
+<label class="tg"><input type="checkbox" id="hp" checked> Cortar ruidos graves (por debajo de 80 Hz)</label>
+<label class="tg"><input type="checkbox" id="norm" checked> Normalizar el volumen (evita saturar)</label>
+</section>
+
+<section class="card" id="act" hidden>
+<div class="sl" style="margin-top:0">
+<label for="from">Probar desde el segundo: <output id="o_from">0 s</output></label>
+<input type="range" id="from" min="0" max="0" step="1" value="0">
+</div>
+<div class="grid">
+<button id="test">▶ Probar 10 s</button>
+<button id="full" class="pri">Procesar todo</button>
+</div>
+<progress id="pg" max="1" value="0" hidden></progress>
+<p id="status" class="hint"></p>
+<audio id="res" controls hidden></audio>
+<span class="lb" style="margin-top:16px">Guardar el resultado</span>
+<div class="row">
+<select id="fmt" aria-label="Formato de guardado">
+<option value="24">WAV 24 bits (alta calidad)</option>
+<option value="32">WAV 32 bits (máxima calidad)</option>
+<option value="16">WAV 16 bits (más ligero)</option>
+</select>
+<button id="save" class="pri" disabled>Guardar audio</button>
+</div>
+<p class="hint">El WAV no comprime ni pierde calidad. Ocupa más espacio que un MP3, pero lo puedes convertir después si lo necesitas.</p>
+</section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+let buf=null,fileName='audio',outFull=null,busy=false;
+
+/* ---------- controles ---------- */
+const CF=[
+['Tono y velocidad',[
+ ['pitch','Tono (semitonos)',-12,12,.1,0,' st'],
+ ['speed','Velocidad (sin cambiar el tono)',.5,2,.05,1,'×']]],
+['Efecto de voz',[
+ ['robot','Robótica',0,100,1,0,'%']]],
+['Ecualizador',[
+ ['bass','Graves',-12,12,1,0,' dB'],
+ ['mid','Medios',-12,12,1,0,' dB'],
+ ['treble','Agudos',-12,12,1,0,' dB']]],
+['Limpieza y volumen',[
+ ['gate','Reducir ruido de fondo',0,100,1,0,'%'],
+ ['comp','Compresor (voz más pareja)',0,100,1,0,'%'],
+ ['gain','Volumen',-12,12,.5,0,' dB']]],
+['Eco y reverberación',[
+ ['echo','Eco',0,100,1,0,'%'],
+ ['echoT','Tiempo del eco',.1,.8,.05,.3,' s'],
+ ['reverb','Reverberación',0,100,1,0,'%']]]
+];
+const flat={};
+CF.forEach(([g,items],gi)=>{
+  const d=document.createElement('details');d.open=gi<1;
+  d.innerHTML='<summary>'+g+'</summary>';
+  items.forEach(([id,l,mn,mx,sp,df,u])=>{
+    flat[id]={df,u,sp};
+    const r=document.createElement('div');r.className='sl';
+    r.innerHTML='<label for="'+id+'">'+l+' <output id="o_'+id+'"></output></label><input type="range" id="'+id+'" min="'+mn+'" max="'+mx+'" step="'+sp+'" value="'+df+'">';
+    d.appendChild(r);
+  });
+  $('groups').appendChild(d);
+});
+const val=id=>+$(id).value;
+function show(id){
+  const v=val(id),f=flat[id];let t=String(f.sp<1?+v.toFixed(2):v);
+  if(v>0&&+$(id).min<0)t='+'+t;
+  $('o_'+id).textContent=t+f.u;
+}
+function dirty(){outFull=null;$('save').disabled=true}
+Object.keys(flat).forEach(id=>{show(id);$(id).addEventListener('input',()=>{show(id);dirty()})});
+$('hp').onchange=dirty;$('norm').onchange=dirty;
+$('from').oninput=()=>{$('o_from').textContent=$('from').value+' s'};
+
+const PR=[['Original',{}],['Grave',{pitch:-4,bass:3}],['Aguda',{pitch:4,treble:2}],['Niño',{pitch:7}],['Monstruo',{pitch:-8,bass:5,reverb:15}],['Robot',{pitch:-1,robot:70,treble:2}]];
+PR.forEach(([l,o])=>{
+  const b=document.createElement('button');b.textContent=l;
+  b.onclick=()=>{Object.keys(flat).forEach(id=>{$(id).value=o[id]!==undefined?o[id]:flat[id].df;show(id)});dirty()};
+  $('presets').appendChild(b);
+});
+
+/* ---------- cambio de tono (WSOLA + remuestreo cúbico) ---------- */
+async function stretch(chs,sr,s,prog){
+  const n=chs[0].length,Hs=Math.round(sr*.016),N=2*Hs,D=8,Ha=Hs/s;
+  const R=Math.round(sr*.008/D),L=Math.floor(Hs/D),nd=Math.floor(n/D),md=new Float32Array(nd);
+  for(let i=0;i<nd;i++){let a=0;for(let c=0;c<chs.length;c++)for(let j=0;j<D;j++)a+=chs[c][i*D+j];md[i]=a/(D*chs.length)}
+  const outLen=Math.ceil(n*s)+2*N,outs=chs.map(()=>new Float32Array(outLen)),win=new Float32Array(N);
+  for(let i=0;i<N;i++)win[i]=.5-.5*Math.cos(2*Math.PI*i/N);
+  let prev=0,k=0,t0=performance.now();
+  for(;;){
+    const nom=Math.round(k*Ha);if(nom>=n)break;
+    let a=nom;
+    if(k>0){
+      const tgt=Math.floor((prev+Hs)/D),base=Math.floor(nom/D);let best=-1e30,bo=null;
+      for(let o=-R;o<=R;o++){
+        const cs=base+o;if(cs<0||cs+L>=nd||tgt+L>=nd)continue;
+        let cr=0,en=1e-9;
+        for(let i=0;i<L;i++){const v=md[cs+i];cr+=v*md[tgt+i];en+=v*v}
+        const sc=cr/Math.sqrt(en);if(sc>best){best=sc;bo=o}
+      }
+      if(bo!==null)a=(base+bo)*D;
+    }
+    const o0=k*Hs;
+    for(let c=0;c<chs.length;c++){
+      const x=chs[c],y=outs[c],m=Math.min(N,n-a);
+      for(let i=0;i<m;i++)y[o0+i]+=win[i]*x[a+i];
+    }
+    prev=a;k++;
+    if(performance.now()-t0>40){prog(nom/n);await new Promise(r=>setTimeout(r));t0=performance.now()}
+  }
+  return outs.map(y=>y.slice(0,Math.ceil(n*s)));
+}
+function resample(chs,r){
+  return chs.map(x=>{
+    const n=x.length,m=Math.floor((n-1)/r),y=new Float32Array(m);
+    for(let i=0;i<m;i++){
+      const p=i*r,j=Math.floor(p),f=p-j,a=x[j>0?j-1:0],b=x[j],c=x[j+1],d=x[j+2<n?j+2:n-1];
+      y[i]=b+.5*f*(c-a+f*(2*a-5*b+4*c-d+f*(3*(b-c)+d-a)));
+    }
+    return y;
+  });
+}
+
+/* ---------- limpieza ---------- */
+function gate(chs,sr,amt){
+  if(amt<=0)return;
+  const thr=Math.pow(10,(-70+amt*.4)/20),floor=Math.pow(10,-18/20),B=Math.round(sr*.01),n=chs[0].length;
+  const atk=1-Math.exp(-1/(sr*.005)),rel=1-Math.exp(-1/(sr*.2));
+  let g=1,hold=0;
+  for(let b=0;b<n;b+=B){
+    const e2=Math.min(n,b+B);let e=0;
+    for(let i=b;i<e2;i++){let m=0;for(let c=0;c<chs.length;c++)m+=chs[c][i];m/=chs.length;e+=m*m}
+    if(Math.sqrt(e/(e2-b))>thr)hold=15;else if(hold>0)hold--;
+    const tg=hold>0?1:floor;
+    for(let i=b;i<e2;i++){g+=(tg-g)*(tg>g?atk:rel);for(let c=0;c<chs.length;c++)chs[c][i]*=g}
+  }
+}
+function makeIR(o,sr){
+  const len=Math.floor(sr*1.8),ir=o.createBuffer(2,len,sr);
+  for(let c=0;c<2;c++){const d=ir.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3)}
+  return ir;
+}
+
+/* ---------- proceso completo ---------- */
+async function process(start,len,prog){
+  const sr=buf.sampleRate,a=Math.floor(start*sr),b=len?Math.min(buf.length,a+Math.floor(len*sr)):buf.length;
+  let chs=[];for(let c=0;c<buf.numberOfChannels;c++)chs.push(buf.getChannelData(c).slice(a,b));
+  const r=Math.pow(2,val('pitch')/12),v=val('speed'),s=r/v;
+  if(Math.abs(s-1)>.001)chs=await stretch(chs,sr,s,p=>prog(p*.8));
+  if(Math.abs(r-1)>.001)chs=resample(chs,r);
+  prog(.82);
+  const rb=val('robot')/100;
+  if(rb>0){const w=2*Math.PI*70/sr;chs.forEach(x=>{for(let i=0;i<x.length;i++)x[i]*=1-rb+rb*Math.sin(w*i)})}
+  gate(chs,sr,val('gate'));
+  prog(.88);
+
+  const n=chs[0].length,ec=val('echo'),rv=val('reverb'),tail=(ec>0||rv>0)?2.5:.2;
+  const o=new OfflineAudioContext(chs.length,n+Math.ceil(sr*tail),sr),ab=o.createBuffer(chs.length,n,sr);
+  chs.forEach((d,i)=>ab.copyToChannel(d,i));
+  const src=o.createBufferSource();src.buffer=ab;
+  let node=src;
+  const chain=x=>{node.connect(x);node=x};
+  if($('hp').checked){const f=o.createBiquadFilter();f.type='highpass';f.frequency.value=80;f.Q.value=.707;chain(f)}
+  [['lowshelf',120,'bass'],['peaking',1500,'mid'],['highshelf',6000,'treble']].forEach(([t,fr,id])=>{
+    const g=val(id);if(!g)return;
+    const f=o.createBiquadFilter();f.type=t;f.frequency.value=fr;f.gain.value=g;if(t==='peaking')f.Q.value=.8;chain(f);
+  });
+  const cm=val('comp');
+  if(cm>0){
+    const c=o.createDynamicsCompressor();
+    c.threshold.value=-18-cm*.2;c.knee.value=12;c.ratio.value=2+cm*.06;c.attack.value=.01;c.release.value=.2;chain(c);
+    const mk=o.createGain();mk.gain.value=Math.pow(10,(cm*.12)/20);chain(mk);
+  }
+  const master=o.createGain();master.gain.value=Math.pow(10,val('gain')/20);
+  node.connect(master);
+  if(ec>0){
+    const d=o.createDelay(1);d.delayTime.value=val('echoT');
+    const fb=o.createGain();fb.gain.value=.35;
+    const w=o.createGain();w.gain.value=ec/100*.7;
+    node.connect(d);d.connect(fb);fb.connect(d);d.connect(w);w.connect(master);
+  }
+  if(rv>0){
+    const cv=o.createConvolver();cv.buffer=makeIR(o,sr);
+    const w=o.createGain();w.gain.value=rv/100*.8;
+    node.connect(cv);cv.connect(w);w.connect(master);
+  }
+  master.connect(o.destination);src.start();
+  const out=await o.startRendering();
+
+  let pk=0;
+  for(let c=0;c<out.numberOfChannels;c++){const d=out.getChannelData(c);for(let i=0;i<d.length;i++){const q=Math.abs(d[i]);if(q>pk)pk=q}}
+  const nm=$('norm').checked;
+  if(pk>0&&(nm||pk>.99)){
+    const k=(nm?.89:.99)/pk;
+    for(let c=0;c<out.numberOfChannels;c++){const d=out.getChannelData(c);for(let i=0;i<d.length;i++)d[i]*=k}
+  }
+  prog(1);
+  return out;
+}
+
+/* ---------- guardar WAV sin pérdida ---------- */
+function wav(ab,bits){
+  const ch=ab.numberOfChannels,n=ab.length,sr=ab.sampleRate,bps=bits/8,fl=bits===32,data=n*ch*bps;
+  const bf=new ArrayBuffer(44+data),v=new DataView(bf);
+  const w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+  w(0,'RIFF');v.setUint32(4,36+data,true);w(8,'WAVE');w(12,'fmt ');
+  v.setUint32(16,16,true);v.setUint16(20,fl?3:1,true);v.setUint16(22,ch,true);
+  v.setUint32(24,sr,true);v.setUint32(28,sr*ch*bps,true);v.setUint16(32,ch*bps,true);v.setUint16(34,bits,true);
+  w(36,'data');v.setUint32(40,data,true);
+  const cd=[];for(let c=0;c<ch;c++)cd.push(ab.getChannelData(c));
+  let o=44;
+  for(let i=0;i<n;i++)for(let c=0;c<ch;c++){
+    let x=Math.max(-1,Math.min(1,cd[c][i]));
+    if(fl){v.setFloat32(o,x,true);o+=4}
+    else if(bits===24){const q=Math.round(x*8388607);v.setUint8(o,q&255);v.setUint8(o+1,(q>>8)&255);v.setUint8(o+2,(q>>16)&255);o+=3}
+    else{x+=(Math.random()-Math.random())/32768;v.setInt16(o,Math.max(-32768,Math.min(32767,Math.round(x*32767))),true);o+=2}
+  }
+  return new Blob([bf],{type:'audio/wav'});
+}
+
+/* ---------- interfaz ---------- */
+const dur=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
+function status(t){$('status').textContent=t}
+function setBtns(b){$('test').disabled=b;$('full').disabled=b;$('save').disabled=b||!outFull}
+
+$('file').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  $('act').hidden=false;status('Leyendo el archivo…');
+  try{
+    const ab=await f.arrayBuffer(),C=window.AudioContext||window.webkitAudioContext,ctx=new C();
+    buf=await new Promise((ok,ko)=>ctx.decodeAudioData(ab,ok,ko));
+    ctx.close();
+  }catch(err){buf=null;$('ctl').hidden=true;status('No se pudo leer el audio de este archivo. Prueba con mp3, wav, m4a o mp4.');return}
+  fileName=f.name.replace(/\.[^.]+$/,'');
+  if($('orig').src)URL.revokeObjectURL($('orig').src);
+  $('orig').src=URL.createObjectURL(f);$('orig').hidden=false;
+  $('info').textContent=f.name+' · '+dur(buf.duration)+' · '+(buf.numberOfChannels===1?'mono':'estéreo')+' · '+buf.sampleRate+' Hz';
+  $('ctl').hidden=false;
+  $('from').max=Math.max(0,Math.floor(buf.duration-1));$('from').value=0;$('o_from').textContent='0 s';
+  $('res').hidden=true;outFull=null;setBtns(false);
+  status('Listo. Ajusta los controles y pulsa «Probar 10 s».');
+};
+
+async function run(full){
+  if(!buf||busy)return;
+  busy=true;setBtns(true);$('pg').hidden=false;$('pg').value=0;
+  status(full?'Procesando el audio completo…':'Procesando la muestra…');
+  try{
+    const out=await process(full?0:val('from'),full?0:10,p=>{$('pg').value=p});
+    outFull=full?out:null;
+    if($('res').src)URL.revokeObjectURL($('res').src);
+    $('res').src=URL.createObjectURL(wav(out,16));$('res').hidden=false;
+    $('res').play().catch(()=>{});
+    status(full?'Listo. Escucha el resultado y guárdalo cuando te guste.':'Muestra lista. Si te gusta, pulsa «Procesar todo».');
+  }catch(err){status('Algo falló al procesar: '+((err&&err.message)||err))}
+  busy=false;$('pg').hidden=true;setBtns(false);
+}
+$('test').onclick=()=>run(false);
+$('full').onclick=()=>run(true);
+
+$('save').onclick=()=>{
+  if(!outFull)return;
+  const b=wav(outFull,+$('fmt').value),a=document.createElement('a');
+  a.href=URL.createObjectURL(b);a.download=fileName+'-voz.wav';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),60000);
+  status('Audio guardado como '+fileName+'-voz.wav');
+};
+</script>
+</body>
+</html>
