@@ -1,0 +1,19 @@
+{
+  "name": "Máscara",
+  "short_name": "Máscara",
+  "description": "Graba vídeos sin mostrar tu cara ni tu voz reales",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#13111c",
+  "theme_color": "#6d3df5",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
