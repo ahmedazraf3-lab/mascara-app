@@ -1,5 +1,5 @@
-const C = 'mascara-v1';
-const F = ['./', 'index.html', 'manifest.json', 'icon.svg'];
+const C = 'mascara-v2';
+const F = ['./', 'index.html', 'manifest.json', 'icon.svg', 'avatar.jpg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(C).then(c => c.addAll(F)));
